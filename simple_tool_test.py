@@ -14,7 +14,7 @@ try:
     from autogen import AssistantAgent, UserProxyAgent
     print("Imported Autogen agents.")
 except ImportError:
-    print("Autogen components not found. Please install pyautogen.")
+    print("Autogen components not found. Please install ag2.")
     exit()
 
 # Import shared config, semaphore, and specific tool schema
