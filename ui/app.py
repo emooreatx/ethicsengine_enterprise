@@ -13,7 +13,7 @@ if project_root not in sys.path:
 
 from open_llm.config_llm import LLMSetter
 # --- Configuration ---
-DEFAULT_API_BASE_URL = "http://127.0.0.1:8080" # Assuming the FastAPI server runs locally on port 8000
+DEFAULT_API_BASE_URL = "http://127.0.0.1:8000" # Assuming the FastAPI server runs locally on port 8000
 
 # --- Helper Functions for API Calls ---
 

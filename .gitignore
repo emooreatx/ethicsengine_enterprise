@@ -1,14 +1,107 @@
-# Log files
+# -----------------------------
+# OS / Editor junk
+# -----------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.venv*/
+pip-wheel-metadata/
+pip-log.txt
+
+# Packaging/build artifacts
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# -----------------------------
+# Tests / Coverage / Linters
+# -----------------------------
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+pytest_cache/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+.cache/
+
+# -----------------------------
+# Logs and results
+# -----------------------------
 logs/
 *.log
-
-# Results files
+logs/ethics_engine.log
 results/
 
-# Python compiled files
-*.pyc
-__pycache__/
-logs/ethics_engine.log
-*.pyc
+# -----------------------------
+# Streamlit
+# -----------------------------
+.streamlit/
+ui/.streamlit/
+
+# -----------------------------
+# Data artifacts (local/generated)
+# -----------------------------
+data/tmp/
+data/cache/
+data/.cache/
+datasets/
+# If you purposefully track certain datasets, remove the above line.
+
+# Project-specific ignores
+# (This repo previously ignored this path; keep it unless you want to version these files)
 data/pipelines/ethics/
 
+# -----------------------------
+# Environment files / Secrets
+# -----------------------------
+.env
+.env.*
+*.env
+
+# -----------------------------
+# Docker/Runtime
+# -----------------------------
+*.pid
+*.socket
+
+# -----------------------------
+# Node (if any local tooling pulls this in)
+# -----------------------------
+node_modules/
