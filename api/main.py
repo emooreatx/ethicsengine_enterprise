@@ -10,7 +10,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # Import routers and other necessary components
-from api.routers import pipelines, server, results
+from api.routers import pipelines, server, results, he300
 from utils.logging_config import setup_logging
 from utils.concurrency_monitor import ConcurrencyMonitor
 from core.engine import EthicsEngine # Import the engine class
@@ -53,6 +53,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(pipelines.router)
 app.include_router(server.router)
 app.include_router(results.router)
+app.include_router(he300.router)  # HE-300 benchmark integration
 
 # --- Root Endpoint ---
 

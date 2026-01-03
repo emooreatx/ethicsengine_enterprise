@@ -60,6 +60,28 @@ class Settings(BaseSettings):
     log_dir: str = Field("logs", description="Directory for log files.")
     log_level: str = Field("INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
 
+    # --- HE-300 Benchmark Settings ---
+    he300_enabled: bool = Field(
+        default=True,
+        validation_alias='HE300_ENABLED',
+        description="Enable HE-300 benchmark API endpoints."
+    )
+    he300_batch_size: int = Field(
+        default=50,
+        validation_alias='HE300_BATCH_SIZE',
+        description="Maximum scenarios per HE-300 batch request."
+    )
+    he300_pipeline_dir: str = Field(
+        default="data/pipelines/he300",
+        validation_alias='HE300_PIPELINE_DIR',
+        description="Directory for pre-generated HE-300 pipeline definitions."
+    )
+    he300_datasets_dir: str = Field(
+        default="datasets/ethics",
+        validation_alias='HE300_DATASETS_DIR',
+        description="Directory containing Hendrycks Ethics CSV datasets."
+    )
+
     # Add other global settings as needed
 
     class Config:
