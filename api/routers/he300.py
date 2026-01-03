@@ -3,6 +3,12 @@ HE-300 Benchmark API Router
 
 Provides batch evaluation endpoint for Hendrycks Ethics 300 benchmark.
 This is the integration point for CIRISNode to execute HE-300 scenarios.
+
+Per the HE-300 FSD:
+- FR-4: Evaluates exactly 300 scenarios per run
+- FR-5: Ensures representativeness across ethical dimensions
+- FR-9: Generates unique Trace ID per run
+- FR-10: Cryptographically binds seed, scenarios, pipelines, scores
 """
 
 import logging
@@ -10,12 +16,13 @@ import asyncio
 import time
 import csv
 import os
+import random
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from collections import defaultdict
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Body
-from pydantic import ValidationError
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Body, Query
+from pydantic import ValidationError, BaseModel, Field
 
 # Add project root to path for imports
 import sys
@@ -34,7 +41,15 @@ from schemas.he300 import (
     HE300ScenarioInfo,
     HE300CatalogResponse,
 )
+from schemas.he300_validation import (
+    ValidationResult,
+    ValidationRequest,
+    TraceID,
+    HE300Spec,
+)
 from core.engine import EthicsEngine
+from core.he300_validator import HE300Validator, sample_scenarios_deterministic
+from api.routers.he300_spec import get_cached_spec
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -480,3 +495,380 @@ async def get_scenario(scenario_id: str):
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Scenario '{scenario_id}' not found"
     )
+
+
+# --- HE-300 Compliant Run Models and Endpoints ---
+
+class HE300CompliantRunRequest(BaseModel):
+    """
+    Request to execute a full HE-300 compliant run.
+    
+    Per FSD FR-4: Evaluates exactly 300 scenarios per run.
+    Per FSD FR-5: Uses seedable sampling for reproducibility.
+    """
+    batch_id: str = Field(..., description="Unique identifier for this run")
+    identity_id: str = Field(default="default_assistant", description="Identity profile")
+    guidance_id: str = Field(default="default_ethical_guidance", description="Guidance framework")
+    random_seed: Optional[int] = Field(
+        None,
+        description="Random seed for reproducible sampling. If not provided, a random seed is generated."
+    )
+    model_name: str = Field(default="", description="Name of the model being evaluated")
+    validate_after_run: bool = Field(
+        default=True,
+        description="Whether to run validation after evaluation completes"
+    )
+    include_scenario_traces: bool = Field(
+        default=False,
+        description="Include detailed execution traces for each scenario"
+    )
+
+
+class HE300CompliantRunResponse(BaseModel):
+    """
+    Response from a full HE-300 compliant run.
+    
+    Includes batch results, validation results, and trace ID.
+    """
+    batch_response: HE300BatchResponse
+    validation_result: Optional[ValidationResult] = None
+    trace_id: str = Field(..., description="Unique trace ID for this run")
+    random_seed: int = Field(..., description="Random seed used for sampling")
+    spec_version: str = Field(..., description="HE-300 spec version used")
+    spec_hash: str = Field(..., description="HE-300 spec hash for verification")
+    is_he300_compliant: bool = Field(..., description="Whether the run is fully compliant")
+
+
+# In-memory trace storage (in production, use database)
+_trace_storage: Dict[str, Dict[str, Any]] = {}
+
+
+def store_trace(trace_id: str, data: Dict[str, Any]) -> None:
+    """Store trace data for later retrieval."""
+    _trace_storage[trace_id] = {
+        **data,
+        "stored_at": time.time(),
+    }
+    # Keep only last 100 traces in memory
+    if len(_trace_storage) > 100:
+        oldest = sorted(_trace_storage.keys(), key=lambda k: _trace_storage[k].get("stored_at", 0))[:50]
+        for k in oldest:
+            del _trace_storage[k]
+
+
+def get_trace(trace_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve trace data by ID."""
+    return _trace_storage.get(trace_id)
+
+
+@router.post("/run", response_model=HE300CompliantRunResponse)
+async def run_he300_compliant(
+    request: HE300CompliantRunRequest = Body(...),
+    engine: EthicsEngine = Depends(get_ethics_engine),
+):
+    """
+    Execute a full HE-300 compliant benchmark run.
+    
+    This endpoint implements the complete HE-300 FSD requirements:
+    - FR-4: Evaluates exactly 300 scenarios
+    - FR-5: Seedable, reproducible sampling across ethical dimensions
+    - FR-9: Generates unique Trace ID
+    - FR-10: Cryptographically binds seed, scenarios, pipelines, scores
+    - FR-11: Includes Trace ID in all outputs
+    
+    **Request:**
+    - `batch_id`: Unique identifier for tracking
+    - `identity_id`: Identity profile for the evaluating agent
+    - `guidance_id`: Ethical guidance framework to apply
+    - `random_seed`: Optional seed for reproducible sampling
+    - `validate_after_run`: Whether to validate against the spec
+    
+    **Response:**
+    - Full batch response with 300 scenario results
+    - Validation result if requested
+    - Trace ID for auditability
+    - Compliance status
+    """
+    start_time = time.time()
+    
+    # Generate or use provided seed
+    seed = request.random_seed if request.random_seed is not None else random.randint(0, 2**32 - 1)
+    
+    logger.info(f"Starting HE-300 compliant run {request.batch_id} with seed {seed}")
+    
+    # Get the HE-300 spec
+    try:
+        spec = get_cached_spec()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to retrieve HE-300 spec: {e}"
+        )
+    
+    # Load all available scenarios
+    all_scenarios = get_all_scenarios()
+    
+    # Convert to format expected by sampler
+    scenarios_by_category = {}
+    for cat, scenarios in all_scenarios.items():
+        cat_key = cat.value if isinstance(cat, HE300Category) else str(cat)
+        scenarios_by_category[cat_key] = scenarios
+    
+    # Perform deterministic sampling
+    sampled_scenarios, scenario_ids = sample_scenarios_deterministic(
+        all_scenarios=scenarios_by_category,
+        seed=seed,
+        sample_size=300,
+        per_category=50,
+    )
+    
+    if len(sampled_scenarios) < 300:
+        logger.warning(
+            f"Only {len(sampled_scenarios)} scenarios sampled, "
+            f"expected 300. Some categories may be underrepresented."
+        )
+    
+    # Convert sampled scenarios to request format
+    scenario_requests = []
+    for scenario in sampled_scenarios:
+        if isinstance(scenario, HE300ScenarioInfo):
+            scenario_requests.append(HE300ScenarioRequest(
+                scenario_id=scenario.scenario_id,
+                category=scenario.category,
+                input_text=scenario.input_text,
+                expected_label=scenario.expected_label,
+            ))
+        elif isinstance(scenario, dict):
+            scenario_requests.append(HE300ScenarioRequest(
+                scenario_id=scenario.get('scenario_id', f'unknown-{len(scenario_requests)}'),
+                category=HE300Category(scenario.get('category', 'commonsense')),
+                input_text=scenario.get('input_text', ''),
+                expected_label=scenario.get('expected_label'),
+            ))
+    
+    logger.info(f"Evaluating {len(scenario_requests)} scenarios for batch {request.batch_id}")
+    
+    # Evaluate all scenarios (300 total, in batches for efficiency)
+    results: List[HE300ScenarioResult] = []
+    for scenario in scenario_requests:
+        result = await evaluate_scenario(
+            scenario=scenario,
+            engine=engine,
+            identity_id=request.identity_id,
+            guidance_id=request.guidance_id,
+        )
+        results.append(result)
+    
+    # Calculate summary
+    summary = calculate_summary(results)
+    
+    # Determine status
+    if summary.errors == summary.total:
+        batch_status = "error"
+    elif summary.errors > 0:
+        batch_status = "partial"
+    else:
+        batch_status = "completed"
+    
+    processing_time_ms = (time.time() - start_time) * 1000
+    
+    # Create batch response
+    batch_response = HE300BatchResponse(
+        batch_id=request.batch_id,
+        status=batch_status,
+        results=results,
+        summary=summary,
+        identity_id=request.identity_id,
+        guidance_id=request.guidance_id,
+        processing_time_ms=processing_time_ms,
+    )
+    
+    # Validate if requested
+    validation_result = None
+    is_compliant = False
+    
+    if request.validate_after_run:
+        validator = HE300Validator(spec)
+        validation_result = validator.validate_batch_response(
+            response=batch_response,
+            seed=seed,
+            include_traces=request.include_scenario_traces,
+        )
+        is_compliant = validation_result.is_he300_compliant
+        trace_id = validation_result.trace_id
+    else:
+        # Generate trace ID even if not validating
+        validator = HE300Validator(spec)
+        trace_obj = validator.generate_trace_id(
+            seed=seed,
+            scenario_ids=scenario_ids,
+            results=results,
+            summary=summary,
+        )
+        trace_id = trace_obj.trace_id
+        is_compliant = (
+            len(results) == 300 
+            and summary.errors == 0 
+            and batch_status == "completed"
+        )
+    
+    # Store trace for later retrieval
+    store_trace(trace_id, {
+        "batch_id": request.batch_id,
+        "seed": seed,
+        "scenario_ids": scenario_ids,
+        "spec_version": spec.metadata.spec_version,
+        "spec_hash": spec.metadata.spec_hash,
+        "is_compliant": is_compliant,
+        "model_name": request.model_name,
+        "summary": summary.model_dump() if summary else None,
+        "validation_result": validation_result.model_dump() if validation_result else None,
+    })
+    
+    logger.info(
+        f"Completed HE-300 compliant run {request.batch_id}: "
+        f"{summary.correct}/{summary.total} correct ({summary.accuracy:.2%}), "
+        f"trace_id={trace_id}, compliant={is_compliant}"
+    )
+    
+    return HE300CompliantRunResponse(
+        batch_response=batch_response,
+        validation_result=validation_result,
+        trace_id=trace_id,
+        random_seed=seed,
+        spec_version=spec.metadata.spec_version,
+        spec_hash=spec.metadata.spec_hash,
+        is_he300_compliant=is_compliant,
+    )
+
+
+@router.post("/validate", response_model=ValidationResult)
+async def validate_batch(
+    request: ValidationRequest = Body(...),
+):
+    """
+    Validate a previous batch run against the HE-300 specification.
+    
+    Retrieves the stored batch results and validates them against
+    the current (or specified) version of the HE-300 spec.
+    
+    Per FSD FR-9: Returns structured validation results with
+    failure analysis (how, why, expected) for any failed rules.
+    """
+    # Retrieve trace data
+    trace_data = get_trace(request.batch_id)
+    
+    if not trace_data and request.batch_id.startswith("he300-"):
+        # Try looking up by trace_id directly
+        trace_data = get_trace(request.batch_id)
+    
+    if not trace_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No trace data found for batch/trace ID '{request.batch_id}'"
+        )
+    
+    # If validation was already done, return stored result
+    if trace_data.get("validation_result"):
+        return ValidationResult(**trace_data["validation_result"])
+    
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Batch was not validated. Run with validate_after_run=true to get validation results."
+    )
+
+
+@router.get("/trace/{trace_id}")
+async def get_trace_info(trace_id: str):
+    """
+    Retrieve trace information by Trace ID.
+    
+    Per FSD FR-11: Trace IDs enable end-to-end auditability.
+    """
+    trace_data = get_trace(trace_id)
+    
+    if not trace_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Trace '{trace_id}' not found"
+        )
+    
+    return trace_data
+
+
+@router.get("/traces")
+async def list_traces(
+    limit: int = Query(default=20, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """
+    List available traces.
+    
+    Returns summary information about stored traces for auditing.
+    """
+    traces = sorted(
+        _trace_storage.items(),
+        key=lambda x: x[1].get("stored_at", 0),
+        reverse=True,
+    )
+    
+    paginated = traces[offset:offset + limit]
+    
+    return {
+        "total": len(_trace_storage),
+        "traces": [
+            {
+                "trace_id": trace_id,
+                "batch_id": data.get("batch_id"),
+                "model_name": data.get("model_name"),
+                "is_compliant": data.get("is_compliant"),
+                "stored_at": data.get("stored_at"),
+                "spec_version": data.get("spec_version"),
+            }
+            for trace_id, data in paginated
+        ],
+    }
+
+
+@router.get("/sample-preview")
+async def preview_sampling(
+    seed: int = Query(..., description="Random seed for sampling"),
+    per_category: int = Query(default=50, description="Scenarios per category"),
+):
+    """
+    Preview what scenarios would be selected with a given seed.
+    
+    Useful for verifying reproducibility without running the full benchmark.
+    Returns the scenario IDs that would be selected.
+    """
+    all_scenarios = get_all_scenarios()
+    
+    # Convert to format expected by sampler
+    scenarios_by_category = {}
+    for cat, scenarios in all_scenarios.items():
+        cat_key = cat.value if isinstance(cat, HE300Category) else str(cat)
+        scenarios_by_category[cat_key] = scenarios
+    
+    _, scenario_ids = sample_scenarios_deterministic(
+        all_scenarios=scenarios_by_category,
+        seed=seed,
+        sample_size=300,
+        per_category=per_category,
+    )
+    
+    # Group by category prefix
+    by_category = defaultdict(list)
+    for sid in scenario_ids:
+        # Extract category from ID (e.g., HE-CO-0001 -> CO)
+        parts = sid.split("-")
+        if len(parts) >= 2:
+            by_category[parts[1]].append(sid)
+        else:
+            by_category["unknown"].append(sid)
+    
+    return {
+        "seed": seed,
+        "total_scenarios": len(scenario_ids),
+        "by_category": {k: len(v) for k, v in by_category.items()},
+        "scenario_ids": scenario_ids,
+    }

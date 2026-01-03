@@ -12,7 +12,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # Import routers and other necessary components
-from api.routers import pipelines, server, results, he300, ollama, reports, github
+from api.routers import pipelines, server, results, he300, he300_spec, ollama, reports, github
 from utils.logging_config import setup_logging
 from utils.concurrency_monitor import ConcurrencyMonitor
 from core.engine import EthicsEngine
@@ -74,6 +74,7 @@ app.include_router(pipelines.router)
 app.include_router(server.router)
 app.include_router(results.router)
 app.include_router(he300.router)
+app.include_router(he300_spec.router)
 app.include_router(ollama.router)
 app.include_router(reports.router)
 app.include_router(github.router)
