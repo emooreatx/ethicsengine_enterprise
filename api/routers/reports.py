@@ -41,6 +41,10 @@ router = APIRouter(
 REPORTS_DIR = Path(project_root) / "data" / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Benchmark results directory (where HE-300 stores batch results)
+BENCHMARK_RESULTS_DIR = Path(project_root) / "data" / "benchmark_results"
+BENCHMARK_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # --- Schemas ---
 class ReportFormat(str, Enum):
@@ -137,6 +141,22 @@ class ReportResponse(BaseModel):
 class ReportListResponse(BaseModel):
     """List of generated reports."""
     reports: List[ReportMetadata]
+    total: int
+
+
+class BenchmarkResultItem(BaseModel):
+    """A benchmark result item for the UI results list."""
+    id: str
+    model_name: str
+    report_name: str = "HE-300 Benchmark"
+    created_at: str
+    scores: Dict[str, float]
+    status: str = "completed"
+
+
+class BenchmarkResultsResponse(BaseModel):
+    """Response containing available benchmark results."""
+    results: List[BenchmarkResultItem]
     total: int
 
 
@@ -1068,6 +1088,75 @@ def generate_json_report(request: ReportRequest, signature: Optional[ReportSigna
 
 
 # --- API Endpoints ---
+
+@router.get("/results", response_model=BenchmarkResultsResponse)
+async def get_benchmark_results():
+    """
+    Get available benchmark results for report generation.
+    
+    This endpoint returns all available HE-300 benchmark results that can be
+    used to generate reports. Results are loaded from the benchmark_results
+    directory and from stored traces.
+    """
+    results: List[BenchmarkResultItem] = []
+    
+    # Load from benchmark results directory
+    for result_file in BENCHMARK_RESULTS_DIR.glob("*.json"):
+        try:
+            data = json.loads(result_file.read_text())
+            
+            # Extract batch_id from filename or data
+            batch_id = data.get("batch_id", result_file.stem)
+            
+            # Extract scores from summary
+            scores = {}
+            if "summary" in data:
+                summary = data["summary"]
+                scores["overall"] = summary.get("accuracy", 0)
+                if "by_category" in summary:
+                    for cat, cat_data in summary["by_category"].items():
+                        if isinstance(cat_data, dict):
+                            scores[cat] = cat_data.get("accuracy", 0)
+                        else:
+                            scores[cat] = 0
+            
+            results.append(BenchmarkResultItem(
+                id=batch_id,
+                model_name=data.get("model_name", "Unknown"),
+                report_name="HE-300 Benchmark",
+                created_at=data.get("completed_at", data.get("created_at", datetime.now(timezone.utc).isoformat())),
+                scores=scores,
+                status=data.get("status", "completed"),
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to load benchmark result from {result_file}: {e}")
+    
+    # Also load from generated reports metadata
+    for meta_file in REPORTS_DIR.glob("*.meta.json"):
+        try:
+            meta_data = json.loads(meta_file.read_text())
+            batch_id = meta_data.get("batch_id", "")
+            
+            # Skip if we already have this batch_id
+            if any(r.id == batch_id for r in results):
+                continue
+            
+            results.append(BenchmarkResultItem(
+                id=batch_id,
+                model_name=meta_data.get("model_name", "Unknown"),
+                report_name="HE-300 Benchmark",
+                created_at=meta_data.get("created_at", datetime.now(timezone.utc).isoformat()),
+                scores={"overall": meta_data.get("accuracy", 0)},
+                status="completed",
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to load metadata from {meta_file}: {e}")
+    
+    # Sort by created_at descending
+    results.sort(key=lambda r: r.created_at, reverse=True)
+    
+    return BenchmarkResultsResponse(results=results, total=len(results))
+
 
 @router.post("/generate", response_model=ReportResponse)
 async def generate_report(request: ReportRequest):

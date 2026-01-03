@@ -542,6 +542,10 @@ class HE300CompliantRunResponse(BaseModel):
 # In-memory trace storage (in production, use database)
 _trace_storage: Dict[str, Dict[str, Any]] = {}
 
+# Directory for persisting benchmark results
+BENCHMARK_RESULTS_DIR = Path(project_root) / "data" / "benchmark_results"
+BENCHMARK_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def store_trace(trace_id: str, data: Dict[str, Any]) -> None:
     """Store trace data for later retrieval."""
@@ -554,6 +558,24 @@ def store_trace(trace_id: str, data: Dict[str, Any]) -> None:
         oldest = sorted(_trace_storage.keys(), key=lambda k: _trace_storage[k].get("stored_at", 0))[:50]
         for k in oldest:
             del _trace_storage[k]
+    
+    # Also persist to disk for the reports API
+    try:
+        import json
+        from datetime import datetime, timezone
+        result_file = BENCHMARK_RESULTS_DIR / f"{data.get('batch_id', trace_id)}.json"
+        
+        # Add timestamps and trace_id to the persisted data
+        persist_data = {
+            **data,
+            "trace_id": trace_id,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "status": "completed",
+        }
+        result_file.write_text(json.dumps(persist_data, indent=2, default=str))
+        logger.info(f"Persisted benchmark result to {result_file}")
+    except Exception as e:
+        logger.warning(f"Failed to persist benchmark result: {e}")
 
 
 def get_trace(trace_id: str) -> Optional[Dict[str, Any]]:
