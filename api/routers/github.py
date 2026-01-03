@@ -832,103 +832,404 @@ def generate_index_html(reports: List[PublishedReport], repo: str) -> str:
 
 
 def generate_root_index_html(repo: str, reports_path: str) -> str:
-    """Generate a root index.html that serves as the landing page for GitHub Pages.
+    """Generate a HuggingFace-style root index with model hub, popular models, and leaderboard.
     
-    This ensures GitHub Pages shows the HE-300 reports instead of README.md.
-    The page loads the reports dynamically from the reports.json file.
-    Features a Hugging Face-style interface with model cards and filtering.
+    Features:
+    - Model cards with ethics scores
+    - Leaderboard table view
+    - Baked-in list of popular models from HuggingFace/Ollama
+    - Reports grouped by model
+    - Search and filtering
     """
     owner, repo_name = repo.split("/")
+    
+    # Baked-in popular models list (from HuggingFace and Ollama)
+    popular_models = [
+        {"name": "gpt-4o", "provider": "OpenAI", "category": "Proprietary", "icon": "&#129302;", "params": "1.7T", "tags": ["chat", "reasoning"]},
+        {"name": "gpt-4-turbo", "provider": "OpenAI", "category": "Proprietary", "icon": "&#129302;", "params": "1.7T", "tags": ["chat", "code"]},
+        {"name": "gpt-3.5-turbo", "provider": "OpenAI", "category": "Proprietary", "icon": "&#129302;", "params": "175B", "tags": ["chat", "fast"]},
+        {"name": "claude-3-opus", "provider": "Anthropic", "category": "Proprietary", "icon": "&#128172;", "params": "Unknown", "tags": ["reasoning", "safe"]},
+        {"name": "claude-3-sonnet", "provider": "Anthropic", "category": "Proprietary", "icon": "&#128172;", "params": "Unknown", "tags": ["balanced"]},
+        {"name": "claude-3-haiku", "provider": "Anthropic", "category": "Proprietary", "icon": "&#128172;", "params": "Unknown", "tags": ["fast", "efficient"]},
+        {"name": "gemini-pro", "provider": "Google", "category": "Proprietary", "icon": "&#128142;", "params": "Unknown", "tags": ["multimodal"]},
+        {"name": "gemini-1.5-pro", "provider": "Google", "category": "Proprietary", "icon": "&#128142;", "params": "Unknown", "tags": ["long-context"]},
+        {"name": "llama3.2:3b", "provider": "Meta", "category": "Open Source", "icon": "&#129433;", "params": "3B", "tags": ["small", "efficient"]},
+        {"name": "llama3.2:8b", "provider": "Meta", "category": "Open Source", "icon": "&#129433;", "params": "8B", "tags": ["balanced"]},
+        {"name": "llama3.1:70b", "provider": "Meta", "category": "Open Source", "icon": "&#129433;", "params": "70B", "tags": ["large", "reasoning"]},
+        {"name": "llama3.1:405b", "provider": "Meta", "category": "Open Source", "icon": "&#129433;", "params": "405B", "tags": ["flagship"]},
+        {"name": "mistral:7b", "provider": "Mistral AI", "category": "Open Source", "icon": "&#127786;", "params": "7B", "tags": ["efficient"]},
+        {"name": "mistral-nemo", "provider": "Mistral AI", "category": "Open Source", "icon": "&#127786;", "params": "12B", "tags": ["balanced"]},
+        {"name": "mixtral:8x7b", "provider": "Mistral AI", "category": "Open Source", "icon": "&#127786;", "params": "46.7B", "tags": ["moe", "efficient"]},
+        {"name": "mixtral:8x22b", "provider": "Mistral AI", "category": "Open Source", "icon": "&#127786;", "params": "141B", "tags": ["moe", "large"]},
+        {"name": "qwen2.5:7b", "provider": "Alibaba", "category": "Open Source", "icon": "&#127968;", "params": "7B", "tags": ["multilingual"]},
+        {"name": "qwen2.5:32b", "provider": "Alibaba", "category": "Open Source", "icon": "&#127968;", "params": "32B", "tags": ["coding", "math"]},
+        {"name": "qwen2.5:72b", "provider": "Alibaba", "category": "Open Source", "icon": "&#127968;", "params": "72B", "tags": ["flagship"]},
+        {"name": "gemma2:9b", "provider": "Google", "category": "Open Source", "icon": "&#128142;", "params": "9B", "tags": ["efficient"]},
+        {"name": "gemma2:27b", "provider": "Google", "category": "Open Source", "icon": "&#128142;", "params": "27B", "tags": ["balanced"]},
+        {"name": "phi-3:mini", "provider": "Microsoft", "category": "Open Source", "icon": "&#966;", "params": "3.8B", "tags": ["tiny", "efficient"]},
+        {"name": "phi-3:medium", "provider": "Microsoft", "category": "Open Source", "icon": "&#966;", "params": "14B", "tags": ["balanced"]},
+        {"name": "codellama:13b", "provider": "Meta", "category": "Open Source", "icon": "&#129433;", "params": "13B", "tags": ["code"]},
+        {"name": "codellama:34b", "provider": "Meta", "category": "Open Source", "icon": "&#129433;", "params": "34B", "tags": ["code", "large"]},
+        {"name": "deepseek-coder:33b", "provider": "DeepSeek", "category": "Open Source", "icon": "&#128187;", "params": "33B", "tags": ["code"]},
+        {"name": "deepseek-v2.5", "provider": "DeepSeek", "category": "Open Source", "icon": "&#128187;", "params": "236B", "tags": ["moe", "flagship"]},
+        {"name": "command-r-plus", "provider": "Cohere", "category": "Proprietary", "icon": "&#128640;", "params": "104B", "tags": ["rag", "enterprise"]},
+        {"name": "yi:34b", "provider": "01.AI", "category": "Open Source", "icon": "&#127383;", "params": "34B", "tags": ["bilingual"]},
+        {"name": "solar:10.7b", "provider": "Upstage", "category": "Open Source", "icon": "&#9728;", "params": "10.7B", "tags": ["efficient"]},
+    ]
+    
+    popular_models_json = json.dumps(popular_models)
     
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HE-300 Ethics Benchmark Hub - {repo_name}</title>
-    <meta name="description" content="Ethics benchmark leaderboard and model evaluation results">
-    <link rel="preconnect" href="https://huggingface.co">
+    <title>HE-300 Ethics Benchmark Hub</title>
+    <meta name="description" content="AI Ethics Benchmark Leaderboard - Compare model performance on moral reasoning tasks">
+    <meta property="og:title" content="HE-300 Ethics Benchmark Hub">
+    <meta property="og:description" content="Evaluating AI models on ethics and moral reasoning">
+    <meta property="og:type" content="website">
     <style>
         :root {{
-            --primary: #4f46e5;
-            --primary-dark: #3730a3;
-            --success: #22c55e;
+            --hf-yellow: #ffd21e;
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
-            --bg: #0f172a;
-            --bg-card: #1e293b;
-            --text: #f1f5f9;
-            --text-muted: #94a3b8;
-            --border: #334155;
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-card: #21262d;
+            --text: #f0f6fc;
+            --text-secondary: #8b949e;
+            --border: #30363d;
+            --accent: #58a6ff;
+            --gold: #ffd700;
+            --silver: #c0c0c0;
+            --bronze: #cd7f32;
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
             background: var(--bg);
             color: var(--text);
-            line-height: 1.6;
-            min-height: 100vh;
+            line-height: 1.5;
         }}
+        
+        /* Navbar */
+        .navbar {{
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }}
+        .navbar-brand {{
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: var(--text);
+            text-decoration: none;
+        }}
+        .navbar-brand .logo {{ font-size: 1.5rem; }}
+        .nav-links {{
+            display: flex;
+            gap: 0.25rem;
+            margin-left: auto;
+        }}
+        .nav-link {{
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }}
+        .nav-link:hover {{ color: var(--text); background: var(--bg-card); }}
+        .nav-link.active {{ color: var(--text); background: var(--primary); }}
+        
+        /* Hero */
         .hero {{
-            background: linear-gradient(135deg, var(--primary), #7c3aed, #ec4899);
-            padding: 4rem 2rem;
+            background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 50%, #ec4899 100%);
+            padding: 3rem 2rem;
             text-align: center;
         }}
-        .hero h1 {{
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        }}
-        .hero p {{
-            font-size: 1.1rem;
-            opacity: 0.9;
-            max-width: 600px;
-            margin: 0 auto 1.5rem;
+        .hero h1 {{ font-size: 2.25rem; margin-bottom: 0.75rem; font-weight: 700; }}
+        .hero p {{ font-size: 1rem; opacity: 0.9; max-width: 700px; margin: 0 auto 1rem; }}
+        .hero-badges {{
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
         }}
         .hero-badge {{
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
             background: rgba(255,255,255,0.2);
-            padding: 0.5rem 1rem;
+            padding: 0.375rem 0.75rem;
             border-radius: 2rem;
-            font-size: 0.9rem;
-            margin-top: 1rem;
+            font-size: 0.8rem;
         }}
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
+        
+        /* Container */
+        .container {{ max-width: 1400px; margin: 0 auto; padding: 1.5rem; }}
+        
+        /* Section Headers */
+        .section-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border);
         }}
-        .stats {{
+        .section-title {{
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }}
+        .section-count {{
+            background: var(--bg-card);
+            padding: 0.25rem 0.625rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }}
+        
+        /* Stats Row */
+        .stats-row {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 1rem;
-            margin: -3rem 0 2rem 0;
-            position: relative;
-            z-index: 10;
+            margin-bottom: 1.5rem;
         }}
         .stat-card {{
             background: var(--bg-card);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            text-align: center;
             border: 1px solid var(--border);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
         }}
-        .stat-value {{
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--primary);
+        .stat-value {{ font-size: 1.75rem; font-weight: 700; color: var(--primary); }}
+        .stat-label {{ font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }}
+        
+        /* Tabs */
+        .tabs {{
+            display: flex;
+            gap: 0.25rem;
+            background: var(--bg-secondary);
+            padding: 0.25rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            overflow-x: auto;
         }}
-        .stat-label {{
+        .tab {{
+            padding: 0.5rem 1rem;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 0.375rem;
+            cursor: pointer;
             font-size: 0.875rem;
-            color: var(--text-muted);
+            font-weight: 500;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }}
+        .tab:hover {{ color: var(--text); }}
+        .tab.active {{ background: var(--bg-card); color: var(--text); }}
+        
+        /* Search & Filters */
+        .search-filters {{
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }}
+        .search-input {{
+            flex: 1;
+            min-width: 250px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.625rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+        }}
+        .search-input::placeholder {{ color: var(--text-secondary); }}
+        .filter-select {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.625rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+        }}
+        
+        /* Model Cards Grid */
+        .model-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }}
+        .model-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            transition: all 0.2s;
+        }}
+        .model-card:hover {{
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }}
+        .model-card.has-report {{ border-left: 3px solid var(--success); }}
+        .model-card.no-report {{ opacity: 0.7; }}
+        .model-card-header {{
+            padding: 1rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }}
+        .model-avatar {{
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }}
+        .model-info {{ flex: 1; min-width: 0; }}
+        .model-name {{
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .model-provider {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }}
+        .model-score {{
+            text-align: right;
+        }}
+        .score-value {{
+            font-size: 1.25rem;
+            font-weight: 700;
+        }}
+        .score-value.high {{ color: var(--success); }}
+        .score-value.medium {{ color: var(--warning); }}
+        .score-value.low {{ color: var(--danger); }}
+        .score-value.pending {{ color: var(--text-secondary); font-size: 0.8rem; }}
+        .model-card-body {{ padding: 0 1rem 1rem; }}
+        .model-tags {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            margin-bottom: 0.75rem;
+        }}
+        .tag {{
+            padding: 0.2rem 0.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+        }}
+        .tag.category {{ background: rgba(99, 102, 241, 0.2); border-color: var(--primary); color: var(--primary); }}
+        .model-actions {{
+            display: flex;
+            gap: 0.5rem;
+        }}
+        .btn {{
+            flex: 1;
+            padding: 0.5rem 0.75rem;
+            border: none;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            font-size: 0.75rem;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            transition: all 0.2s;
+        }}
+        .btn-primary {{ background: var(--primary); color: white; }}
+        .btn-primary:hover {{ background: var(--primary-dark); }}
+        .btn-secondary {{ background: var(--bg-secondary); color: var(--text); border: 1px solid var(--border); }}
+        .btn-secondary:hover {{ background: var(--border); }}
+        .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+        
+        /* Leaderboard Table */
+        .leaderboard {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }}
+        .leaderboard table {{ width: 100%; border-collapse: collapse; }}
+        .leaderboard th {{
+            background: var(--bg-secondary);
+            padding: 0.75rem 1rem;
+            text-align: left;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--border);
         }}
+        .leaderboard td {{
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.875rem;
+        }}
+        .leaderboard tr:hover {{ background: var(--bg-secondary); }}
+        .leaderboard tr:last-child td {{ border-bottom: none; }}
+        .rank {{ font-weight: 700; }}
+        .rank-1 {{ color: var(--gold); }}
+        .rank-2 {{ color: var(--silver); }}
+        .rank-3 {{ color: var(--bronze); }}
+        .model-cell {{ display: flex; align-items: center; gap: 0.5rem; }}
+        .mini-avatar {{
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }}
+        
+        /* Popular Models Section */
+        .popular-section {{
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }}
+        
+        /* Loading State */
         .loading {{
             text-align: center;
-            padding: 4rem;
-            color: var(--text-muted);
+            padding: 3rem;
+            color: var(--text-secondary);
         }}
         .loading-spinner {{
             width: 40px;
@@ -939,262 +1240,383 @@ def generate_root_index_html(repo: str, reports_path: str) -> str:
             animation: spin 1s linear infinite;
             margin: 0 auto 1rem;
         }}
-        @keyframes spin {{
-            to {{ transform: rotate(360deg); }}
-        }}
-        .reports-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 1.5rem;
-        }}
-        .report-card {{
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+        
+        /* Empty State */
+        .empty-state {{
+            text-align: center;
+            padding: 3rem;
             background: var(--bg-card);
-            border-radius: 1rem;
-            overflow: hidden;
-            border: 1px solid var(--border);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }}
-        .report-card:hover {{
-            transform: translateY(-4px);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
-        }}
-        .report-header {{
-            padding: 1.5rem;
-            background: linear-gradient(135deg, var(--primary), #7c3aed);
-        }}
-        .report-header h3 {{
-            font-size: 1.1rem;
-            margin-bottom: 0.5rem;
-        }}
-        .report-header .model {{
-            font-size: 0.875rem;
-            opacity: 0.9;
-        }}
-        .report-body {{
-            padding: 1.5rem;
-        }}
-        .accuracy-display {{
-            text-align: center;
-            margin-bottom: 1rem;
-        }}
-        .accuracy-value {{
-            font-size: 2.5rem;
-            font-weight: 700;
-        }}
-        .accuracy-value.high {{ color: var(--success); }}
-        .accuracy-value.medium {{ color: var(--warning); }}
-        .accuracy-value.low {{ color: var(--danger); }}
-        .accuracy-label {{
-            font-size: 0.875rem;
-            color: var(--text-muted);
-        }}
-        .report-meta {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }}
-        .meta-badge {{
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            background: var(--border);
-            border-radius: 1rem;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }}
-        .report-actions {{
-            display: flex;
-            gap: 0.5rem;
-        }}
-        .btn {{
-            flex: 1;
-            padding: 0.75rem;
-            border: none;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            text-align: center;
-            transition: all 0.2s;
-        }}
-        .btn-primary {{
-            background: var(--primary);
-            color: white;
-        }}
-        .btn-primary:hover {{
-            background: var(--primary-dark);
-        }}
-        .btn-secondary {{
-            background: var(--border);
-            color: var(--text);
-        }}
-        .btn-secondary:hover {{
-            background: #475569;
-        }}
-        .no-reports {{
-            text-align: center;
-            padding: 4rem;
-            background: var(--bg-card);
-            border-radius: 1rem;
             border: 2px dashed var(--border);
+            border-radius: 0.75rem;
         }}
-        .no-reports h3 {{
-            margin-bottom: 1rem;
-            color: var(--text-muted);
-        }}
+        .empty-icon {{ font-size: 3rem; margin-bottom: 0.75rem; opacity: 0.5; }}
+        
+        /* Footer */
         footer {{
             text-align: center;
             padding: 2rem;
-            color: var(--text-muted);
-            margin-top: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            border-top: 1px solid var(--border);
+            margin-top: 3rem;
         }}
-        footer a {{
-            color: var(--primary);
-            text-decoration: none;
-        }}
-        footer a:hover {{
-            text-decoration: underline;
-        }}
+        footer a {{ color: var(--accent); text-decoration: none; }}
+        footer a:hover {{ text-decoration: underline; }}
+        
         @media (max-width: 768px) {{
-            .hero h1 {{ font-size: 1.75rem; }}
-            .stats {{ grid-template-columns: repeat(2, 1fr); }}
-            .reports-grid {{ grid-template-columns: 1fr; }}
+            .navbar {{ flex-wrap: wrap; padding: 0.5rem 1rem; }}
+            .nav-links {{ width: 100%; justify-content: center; margin: 0.5rem 0 0 0; }}
+            .hero {{ padding: 2rem 1rem; }}
+            .hero h1 {{ font-size: 1.5rem; }}
+            .container {{ padding: 1rem; }}
+            .model-grid {{ grid-template-columns: 1fr; }}
+            .search-filters {{ flex-direction: column; }}
+            .search-input {{ min-width: 100%; }}
+            .tabs {{ width: 100%; }}
         }}
     </style>
 </head>
 <body>
+    <nav class="navbar">
+        <a href="#" class="navbar-brand">
+            <span class="logo">&#128300;</span>
+            <span>HE-300 Benchmark</span>
+        </a>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" onclick="showTab('leaderboard')">&#127942; Leaderboard</a>
+            <a href="#" class="nav-link" onclick="showTab('models')">&#129302; Models</a>
+            <a href="#" class="nav-link" onclick="showTab('popular')">&#11088; Popular</a>
+            <a href="https://github.com/{repo}" class="nav-link" target="_blank">&#128279; GitHub</a>
+        </div>
+    </nav>
+
     <div class="hero">
-        <h1>&#128300; HE-300 Ethics Benchmark</h1>
-        <p>Published benchmark results for AI ethics evaluation using the EthicsEngine Enterprise HE-300 benchmark suite.</p>
-        <span class="hero-badge">&#128279; {repo}</span>
+        <h1>&#127942; AI Ethics Benchmark Leaderboard</h1>
+        <p>Evaluating AI models on moral reasoning and ethical decision-making using the HE-300 benchmark suite. Compare scores across 300 curated ethics scenarios.</p>
+        <div class="hero-badges">
+            <span class="hero-badge">&#128200; <span id="reportCount">0</span> Reports</span>
+            <span class="hero-badge">&#129302; <span id="modelCount">0</span> Models Tested</span>
+            <span class="hero-badge">&#128279; {repo}</span>
+        </div>
     </div>
 
     <div class="container">
-        <div class="stats" id="stats">
-            <div class="stat-card">
-                <div class="stat-value" id="totalReports">-</div>
-                <div class="stat-label">Reports</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="avgAccuracy">-</div>
-                <div class="stat-label">Avg Accuracy</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="modelsCount">-</div>
-                <div class="stat-label">Models</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="lastUpdate">-</div>
-                <div class="stat-label">Last Update</div>
-            </div>
+        <div class="stats-row" id="statsRow">
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Reports</div></div>
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Models</div></div>
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Avg Score</div></div>
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Top Score</div></div>
         </div>
 
-        <div id="content">
-            <div class="loading">
-                <div class="loading-spinner"></div>
-                <p>Loading reports...</p>
+        <!-- Leaderboard Tab -->
+        <div id="leaderboardTab">
+            <div class="section-header">
+                <h2 class="section-title">&#127942; Ethics Leaderboard <span class="section-count" id="leaderboardCount">0</span></h2>
             </div>
+            <div class="search-filters">
+                <input type="text" class="search-input" id="searchInput" placeholder="&#128269; Search models..." oninput="filterAndRender()">
+                <select class="filter-select" id="sortSelect" onchange="filterAndRender()">
+                    <option value="accuracy-desc">Highest Score</option>
+                    <option value="accuracy-asc">Lowest Score</option>
+                    <option value="date-desc">Newest First</option>
+                    <option value="model">Model Name</option>
+                </select>
+            </div>
+            <div id="leaderboardContent" class="leaderboard"></div>
+        </div>
+
+        <!-- Models Tab -->
+        <div id="modelsTab" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">&#129302; Tested Models</h2>
+            </div>
+            <div id="modelsContent" class="model-grid"></div>
+        </div>
+
+        <!-- Popular Models Tab -->
+        <div id="popularTab" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">&#11088; Popular Models <span class="section-count">{len(popular_models)}</span></h2>
+            </div>
+            <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.875rem;">
+                Common models from HuggingFace & Ollama. Green border indicates the model has been benchmarked.
+            </p>
+            <div class="search-filters">
+                <input type="text" class="search-input" id="popularSearchInput" placeholder="&#128269; Search popular models..." oninput="filterPopular()">
+                <select class="filter-select" id="categoryFilter" onchange="filterPopular()">
+                    <option value="">All Categories</option>
+                    <option value="Open Source">Open Source</option>
+                    <option value="Proprietary">Proprietary</option>
+                </select>
+                <select class="filter-select" id="providerFilter" onchange="filterPopular()">
+                    <option value="">All Providers</option>
+                    <option value="OpenAI">OpenAI</option>
+                    <option value="Anthropic">Anthropic</option>
+                    <option value="Meta">Meta</option>
+                    <option value="Google">Google</option>
+                    <option value="Mistral AI">Mistral AI</option>
+                    <option value="Alibaba">Alibaba</option>
+                    <option value="Microsoft">Microsoft</option>
+                    <option value="DeepSeek">DeepSeek</option>
+                </select>
+            </div>
+            <div id="popularContent" class="model-grid"></div>
+        </div>
+
+        <div id="loadingState" class="loading">
+            <div class="loading-spinner"></div>
+            <p>Loading benchmark reports...</p>
+        </div>
+
+        <div id="emptyState" class="empty-state" style="display: none;">
+            <div class="empty-icon">&#128196;</div>
+            <h3>No Reports Published Yet</h3>
+            <p>Run the HE-300 benchmark and deploy reports to see results here.</p>
         </div>
     </div>
 
     <footer>
-        <p>Generated by <a href="https://github.com/{repo}">EthicsEngine Enterprise</a> HE-300 Benchmark System</p>
-        <p style="margin-top: 0.5rem; font-size: 0.8rem;">
-            <a href="{reports_path}/reports.json">&#128190; Raw Data (JSON)</a>
-        </p>
+        <p>Powered by <a href="https://github.com/{repo}">EthicsEngine Enterprise</a> &#8212; HE-300 Benchmark System</p>
+        <p style="margin-top: 0.5rem;"><a href="{reports_path}/reports.json">&#128190; Raw Data (JSON)</a></p>
     </footer>
 
     <script>
-        async function loadReports() {{
+        const popularModels = {popular_models_json};
+        let reports = [];
+        let filteredReports = [];
+        let currentTab = 'leaderboard';
+
+        async function init() {{
             try {{
                 const response = await fetch('{reports_path}/reports.json');
-                if (!response.ok) throw new Error('No reports found');
-                const data = await response.json();
-                renderReports(data.reports || [], data.last_updated);
-            }} catch (error) {{
-                console.error('Failed to load reports:', error);
-                document.getElementById('content').innerHTML = `
-                    <div class="no-reports">
-                        <h3>&#128196; No Reports Published Yet</h3>
-                        <p>Run the HE-300 benchmark and publish reports to see them here.</p>
-                    </div>
-                `;
+                if (response.ok) {{
+                    const data = await response.json();
+                    reports = data.reports || [];
+                    filteredReports = [...reports];
+                }}
+            }} catch (e) {{
+                console.log('No reports yet');
             }}
+            
+            document.getElementById('loadingState').style.display = 'none';
+            renderStats();
+            filterAndRender();
+            renderPopular();
         }}
 
-        function renderReports(reports, lastUpdated) {{
-            // Update stats
-            document.getElementById('totalReports').textContent = reports.length;
+        function renderStats() {{
+            const total = reports.length;
+            const models = new Set(reports.map(r => r.model_name)).size;
+            const avgAcc = total > 0 ? reports.reduce((s, r) => s + r.accuracy, 0) / total : 0;
+            const topAcc = total > 0 ? Math.max(...reports.map(r => r.accuracy)) : 0;
+
+            document.getElementById('reportCount').textContent = total;
+            document.getElementById('modelCount').textContent = models;
+
+            document.getElementById('statsRow').innerHTML = `
+                <div class="stat-card"><div class="stat-value">${{total}}</div><div class="stat-label">Reports</div></div>
+                <div class="stat-card"><div class="stat-value">${{models}}</div><div class="stat-label">Models</div></div>
+                <div class="stat-card"><div class="stat-value">${{total > 0 ? (avgAcc * 100).toFixed(1) + '%' : '-'}}</div><div class="stat-label">Avg Score</div></div>
+                <div class="stat-card"><div class="stat-value">${{total > 0 ? (topAcc * 100).toFixed(1) + '%' : '-'}}</div><div class="stat-label">Top Score</div></div>
+            `;
+        }}
+
+        function showTab(tab) {{
+            currentTab = tab;
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            event.target.classList.add('active');
             
-            if (reports.length > 0) {{
-                const avgAcc = reports.reduce((sum, r) => sum + (r.accuracy || 0), 0) / reports.length;
-                document.getElementById('avgAccuracy').textContent = (avgAcc * 100).toFixed(1) + '%';
-                
-                const uniqueModels = new Set(reports.map(r => r.model_name));
-                document.getElementById('modelsCount').textContent = uniqueModels.size;
-            }} else {{
-                document.getElementById('avgAccuracy').textContent = '-';
-                document.getElementById('modelsCount').textContent = '-';
-            }}
+            ['leaderboardTab', 'modelsTab', 'popularTab'].forEach(t => {{
+                document.getElementById(t).style.display = 'none';
+            }});
+            document.getElementById(tab + 'Tab').style.display = 'block';
             
-            if (lastUpdated) {{
-                const date = new Date(lastUpdated);
-                document.getElementById('lastUpdate').textContent = date.toLocaleDateString();
-            }} else {{
-                document.getElementById('lastUpdate').textContent = '-';
+            if (tab === 'models') renderModels();
+        }}
+
+        function filterAndRender() {{
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const sort = document.getElementById('sortSelect').value;
+            
+            filteredReports = reports.filter(r => r.model_name.toLowerCase().includes(search));
+            
+            switch(sort) {{
+                case 'accuracy-desc': filteredReports.sort((a, b) => b.accuracy - a.accuracy); break;
+                case 'accuracy-asc': filteredReports.sort((a, b) => a.accuracy - b.accuracy); break;
+                case 'date-desc': filteredReports.sort((a, b) => new Date(b.published_at) - new Date(a.published_at)); break;
+                case 'model': filteredReports.sort((a, b) => a.model_name.localeCompare(b.model_name)); break;
             }}
 
-            // Render reports
-            if (reports.length === 0) {{
-                document.getElementById('content').innerHTML = `
-                    <div class="no-reports">
-                        <h3>&#128196; No Reports Published Yet</h3>
-                        <p>Run the HE-300 benchmark and publish reports to see them here.</p>
-                    </div>
-                `;
+            document.getElementById('leaderboardCount').textContent = filteredReports.length;
+            
+            if (filteredReports.length === 0) {{
+                document.getElementById('leaderboardContent').innerHTML = '';
+                document.getElementById('emptyState').style.display = 'block';
                 return;
             }}
-
-            // Sort by date descending
-            reports.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
-
-            const html = `
-                <div class="reports-grid">
-                    ${{reports.map(r => {{
-                        const accuracy = r.accuracy || 0;
-                        const accClass = accuracy >= 0.7 ? 'high' : accuracy >= 0.5 ? 'medium' : 'low';
-                        const date = new Date(r.published_at).toLocaleDateString();
-                        const formatIcon = r.format === 'html' ? '&#127760;' : r.format === 'json' ? '&#128190;' : '&#128196;';
-                        
-                        return `
-                            <div class="report-card">
-                                <div class="report-header">
-                                    <h3>${{r.batch_id}}</h3>
-                                    <div class="model">&#129302; ${{r.model_name}}</div>
-                                </div>
-                                <div class="report-body">
-                                    <div class="accuracy-display">
-                                        <div class="accuracy-value ${{accClass}}">${{(accuracy * 100).toFixed(1)}}%</div>
-                                        <div class="accuracy-label">Accuracy</div>
-                                    </div>
-                                    <div class="report-meta">
-                                        <span class="meta-badge">${{formatIcon}} ${{r.format.toUpperCase()}}</span>
-                                        <span class="meta-badge">&#128197; ${{date}}</span>
-                                    </div>
-                                    <div class="report-actions">
-                                        <a href="${{r.pages_url}}" class="btn btn-primary">&#128269; View Report</a>
-                                        <a href="${{r.raw_url}}" class="btn btn-secondary">&#128190; Download</a>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }}).join('')}}
-                </div>
-            `;
-            document.getElementById('content').innerHTML = html;
+            
+            document.getElementById('emptyState').style.display = 'none';
+            renderLeaderboard();
         }}
 
-        loadReports();
+        function getAccClass(acc) {{ return acc >= 0.7 ? 'high' : acc >= 0.5 ? 'medium' : 'low'; }}
+        
+        function getModelIcon(name) {{
+            const n = name.toLowerCase();
+            if (n.includes('gpt')) return '&#129302;';
+            if (n.includes('claude')) return '&#128172;';
+            if (n.includes('llama')) return '&#129433;';
+            if (n.includes('mistral') || n.includes('mixtral')) return '&#127786;';
+            if (n.includes('gemma') || n.includes('gemini')) return '&#128142;';
+            if (n.includes('phi')) return '&#966;';
+            if (n.includes('qwen')) return '&#127968;';
+            if (n.includes('deepseek')) return '&#128187;';
+            return '&#129302;';
+        }}
+
+        function getProvider(name) {{
+            const n = name.toLowerCase();
+            if (n.includes('gpt')) return 'OpenAI';
+            if (n.includes('claude')) return 'Anthropic';
+            if (n.includes('llama') || n.includes('codellama')) return 'Meta';
+            if (n.includes('mistral') || n.includes('mixtral')) return 'Mistral AI';
+            if (n.includes('gemma') || n.includes('gemini')) return 'Google';
+            if (n.includes('phi')) return 'Microsoft';
+            if (n.includes('qwen')) return 'Alibaba';
+            if (n.includes('deepseek')) return 'DeepSeek';
+            if (n.includes('command')) return 'Cohere';
+            return 'Unknown';
+        }}
+
+        function renderLeaderboard() {{
+            const rows = filteredReports.map((r, i) => {{
+                const rank = i + 1;
+                const rankClass = rank <= 3 ? 'rank-' + rank : '';
+                const acc = (r.accuracy * 100).toFixed(1);
+                const accClass = getAccClass(r.accuracy);
+                const date = new Date(r.published_at).toLocaleDateString();
+                const icon = getModelIcon(r.model_name);
+                const provider = getProvider(r.model_name);
+                
+                return `<tr>
+                    <td><span class="rank ${{rankClass}}">#${{rank}}</span></td>
+                    <td><div class="model-cell"><div class="mini-avatar">${{icon}}</div><div><strong>${{r.model_name}}</strong><br><small style="color:var(--text-secondary)">${{provider}}</small></div></div></td>
+                    <td><span class="score-value ${{accClass}}">${{acc}}%</span></td>
+                    <td style="color: var(--text-secondary)">${{date}}</td>
+                    <td><a href="${{r.pages_url}}" class="btn btn-primary" target="_blank">View</a></td>
+                </tr>`;
+            }}).join('');
+
+            document.getElementById('leaderboardContent').innerHTML = `
+                <table>
+                    <thead><tr><th>Rank</th><th>Model</th><th>Ethics Score</th><th>Date</th><th></th></tr></thead>
+                    <tbody>${{rows}}</tbody>
+                </table>
+            `;
+        }}
+
+        function renderModels() {{
+            // Group reports by model, take best score
+            const modelMap = {{}};
+            reports.forEach(r => {{
+                if (!modelMap[r.model_name] || r.accuracy > modelMap[r.model_name].accuracy) {{
+                    modelMap[r.model_name] = r;
+                }}
+            }});
+            
+            const models = Object.values(modelMap).sort((a, b) => b.accuracy - a.accuracy);
+            
+            document.getElementById('modelsContent').innerHTML = models.map(r => {{
+                const acc = (r.accuracy * 100).toFixed(1);
+                const accClass = getAccClass(r.accuracy);
+                const icon = getModelIcon(r.model_name);
+                const provider = getProvider(r.model_name);
+                
+                return `
+                    <div class="model-card has-report">
+                        <div class="model-card-header">
+                            <div class="model-avatar">${{icon}}</div>
+                            <div class="model-info">
+                                <div class="model-name">${{r.model_name}}</div>
+                                <div class="model-provider">&#127970; ${{provider}}</div>
+                            </div>
+                            <div class="model-score">
+                                <div class="score-value ${{accClass}}">${{acc}}%</div>
+                            </div>
+                        </div>
+                        <div class="model-card-body">
+                            <div class="model-actions">
+                                <a href="${{r.pages_url}}" class="btn btn-primary" target="_blank">View Report</a>
+                                <a href="${{r.raw_url}}" class="btn btn-secondary" download>Download</a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }}).join('');
+        }}
+
+        function filterPopular() {{
+            const search = document.getElementById('popularSearchInput').value.toLowerCase();
+            const category = document.getElementById('categoryFilter').value;
+            const provider = document.getElementById('providerFilter').value;
+            
+            const filtered = popularModels.filter(m => {{
+                const matchSearch = m.name.toLowerCase().includes(search) || m.provider.toLowerCase().includes(search);
+                const matchCategory = !category || m.category === category;
+                const matchProvider = !provider || m.provider === provider;
+                return matchSearch && matchCategory && matchProvider;
+            }});
+            
+            renderPopularModels(filtered);
+        }}
+
+        function renderPopular() {{ renderPopularModels(popularModels); }}
+
+        function renderPopularModels(models) {{
+            // Check which models have reports
+            const testedModels = new Set(reports.map(r => r.model_name.toLowerCase()));
+            
+            document.getElementById('popularContent').innerHTML = models.map(m => {{
+                const tested = testedModels.has(m.name.toLowerCase());
+                const report = reports.find(r => r.model_name.toLowerCase() === m.name.toLowerCase());
+                
+                let scoreHtml = '<div class="score-value pending">Not tested</div>';
+                if (tested && report) {{
+                    const acc = (report.accuracy * 100).toFixed(1);
+                    const accClass = getAccClass(report.accuracy);
+                    scoreHtml = `<div class="score-value ${{accClass}}">${{acc}}%</div>`;
+                }}
+                
+                return `
+                    <div class="model-card ${{tested ? 'has-report' : 'no-report'}}">
+                        <div class="model-card-header">
+                            <div class="model-avatar">${{m.icon}}</div>
+                            <div class="model-info">
+                                <div class="model-name">${{m.name}}</div>
+                                <div class="model-provider">&#127970; ${{m.provider}}</div>
+                            </div>
+                            <div class="model-score">${{scoreHtml}}</div>
+                        </div>
+                        <div class="model-card-body">
+                            <div class="model-tags">
+                                <span class="tag category">${{m.category}}</span>
+                                <span class="tag">${{m.params}}</span>
+                                ${{m.tags.map(t => `<span class="tag">${{t}}</span>`).join('')}}
+                            </div>
+                            <div class="model-actions">
+                                ${{tested && report ? 
+                                    `<a href="${{report.pages_url}}" class="btn btn-primary" target="_blank">View Report</a>` :
+                                    `<button class="btn btn-secondary" disabled>Not Benchmarked</button>`
+                                }}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }}).join('');
+        }}
+
+        init();
     </script>
 </body>
 </html>'''
