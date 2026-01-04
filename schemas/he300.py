@@ -49,6 +49,10 @@ class HE300BatchRequest(BaseModel):
         default="default_ethical_guidance",
         description="Ethical guidance framework to apply"
     )
+    model_name: str = Field(
+        default="",
+        description="Name of the model being evaluated"
+    )
     model_config_override: Optional[Dict[str, Any]] = Field(
         None,
         description="Optional LLM configuration overrides"

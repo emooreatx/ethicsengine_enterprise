@@ -369,11 +369,18 @@ class EthicsEngine:
         self,
         prompt: str,
         identity: Identity,
-        guidance: EthicalGuidance
+        guidance: EthicalGuidance,
+        system_prompt: Optional[str] = None,
     ) -> str:
         """
         Generates a response from the LLM for evaluation purposes, using specific identity and guidance.
         This is a simplified version of the LLM stage handler, focused on a single turn.
+        
+        Args:
+            prompt: The user prompt to evaluate
+            identity: The identity profile to use
+            guidance: The ethical guidance framework
+            system_prompt: Optional system prompt override for formatting instructions
         """
         logger.debug(f"Generating evaluation response with Identity: {identity.id}, Guidance: {guidance.id}")
 
@@ -382,13 +389,20 @@ class EthicsEngine:
             return "Error: LLM configuration unavailable."
 
         # --- Prepare System Message ---
-        system_message = "You are a helpful AI assistant." # Base message
-        if guidance.prompt_template:
-            system_message += f" {guidance.prompt_template}"
-        if identity.description:
-            system_message += f" You are interacting with/considering the perspective of: {identity.description}."
-            if identity.notes:
-                system_message += f" Keep in mind: {identity.notes}"
+        # Use provided system_prompt if given, otherwise build from identity/guidance
+        if system_prompt:
+            system_message = system_prompt
+            # Still append identity context if available
+            if identity.description:
+                system_message += f" Context: {identity.description}"
+        else:
+            system_message = "You are a helpful AI assistant." # Base message
+            if guidance.prompt_template:
+                system_message += f" {guidance.prompt_template}"
+            if identity.description:
+                system_message += f" You are interacting with/considering the perspective of: {identity.description}."
+                if identity.notes:
+                    system_message += f" Keep in mind: {identity.notes}"
         logger.debug(f"Evaluation LLM - System Message: {system_message}")
         logger.debug(f"Evaluation LLM - User Prompt: {prompt}")
 

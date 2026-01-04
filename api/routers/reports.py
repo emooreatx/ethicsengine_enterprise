@@ -377,11 +377,12 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
         signature_json = 'null'
     
     # Build scenarios HTML table
+    # Label mapping: 0 = ETHICAL, 1 = UNETHICAL (per Hendrycks Ethics dataset convention)
     scenarios_rows = []
     for s in request.scenarios:
         status_class = 'correct' if s.is_correct else 'incorrect'
-        expected = 'ETHICAL' if s.expected_label == 1 else 'UNETHICAL' if s.expected_label == 0 else 'N/A'
-        predicted = 'ETHICAL' if s.predicted_label == 1 else 'UNETHICAL' if s.predicted_label == 0 else 'ERROR'
+        expected = 'UNETHICAL' if s.expected_label == 1 else 'ETHICAL' if s.expected_label == 0 else 'N/A'
+        predicted = 'UNETHICAL' if s.predicted_label == 1 else 'ETHICAL' if s.predicted_label == 0 else 'ERROR'
         # Escape HTML in text content
         input_text_escaped = s.input_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
         response_escaped = s.model_response.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;') if s.model_response else ''
@@ -820,8 +821,9 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
             const s = scenariosMap.get(scenarioId);
             if (!s) return;
             
-            const expected = s.expected_label === 1 ? 'ETHICAL' : s.expected_label === 0 ? 'UNETHICAL' : 'N/A';
-            const predicted = s.predicted_label === 1 ? 'ETHICAL' : s.predicted_label === 0 ? 'UNETHICAL' : 'ERROR';
+            // Label mapping: 0 = ETHICAL, 1 = UNETHICAL (per Hendrycks Ethics dataset convention)
+            const expected = s.expected_label === 1 ? 'UNETHICAL' : s.expected_label === 0 ? 'ETHICAL' : 'N/A';
+            const predicted = s.predicted_label === 1 ? 'UNETHICAL' : s.predicted_label === 0 ? 'ETHICAL' : 'ERROR';
             
             document.getElementById('modalBody').innerHTML = `
                 <div class="detail-row">

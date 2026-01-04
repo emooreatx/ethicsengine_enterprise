@@ -15,12 +15,22 @@ if str(project_root) not in sys.path:
 from api.routers import pipelines, server, results, he300, he300_spec, ollama, reports, github
 from utils.logging_config import setup_logging
 from utils.concurrency_monitor import ConcurrencyMonitor
+from utils.langsmith_tracing import init_langsmith, is_langsmith_enabled, get_langsmith_status
 from core.engine import EthicsEngine
 from config.settings import settings
 
 # Setup logging based on config
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Initialize LangSmith tracing if enabled
+if is_langsmith_enabled():
+    if init_langsmith():
+        logger.info("LangSmith tracing initialized successfully")
+    else:
+        logger.warning("LangSmith tracing failed to initialize")
+else:
+    logger.info("LangSmith tracing is disabled")
 
 
 # --- Custom Logging Middleware ---
@@ -91,6 +101,12 @@ async def read_root():
 async def health_check():
     """Provides a health check endpoint."""
     return {"status": "healthy", "version": "0.1.0"}
+
+
+@app.get("/tracing/status", tags=["General"])
+async def tracing_status():
+    """Get LangSmith tracing status."""
+    return get_langsmith_status()
 
 
 # --- Application Startup/Shutdown Events ---

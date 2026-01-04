@@ -82,6 +82,28 @@ class Settings(BaseSettings):
         description="Directory containing Hendrycks Ethics CSV datasets."
     )
 
+    # --- LangSmith/LangChain Tracing ---
+    langsmith_enabled: bool = Field(
+        default=False,
+        validation_alias='LANGSMITH_ENABLED',
+        description="Enable LangSmith tracing for LLM calls."
+    )
+    langsmith_api_key: str = Field(
+        default="",
+        validation_alias='LANGSMITH_API_KEY',
+        description="LangSmith API key for tracing."
+    )
+    langsmith_project: str = Field(
+        default="ethicsengine",
+        validation_alias='LANGSMITH_PROJECT',
+        description="LangSmith project name."
+    )
+    langsmith_endpoint: str = Field(
+        default="https://api.smith.langchain.com",
+        validation_alias='LANGSMITH_ENDPOINT',
+        description="LangSmith API endpoint."
+    )
+
     # Add other global settings as needed
 
     class Config:

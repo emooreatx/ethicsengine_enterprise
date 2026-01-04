@@ -15,6 +15,10 @@ ujson
 ollama  # Ollama Python client for local LLM inference
 fix-busted-json  # Fix malformed JSON from LLM responses
 
+# LangSmith/LangChain tracing (optional but recommended)
+langsmith>=0.1.0  # LangSmith SDK for tracing
+langchain-core>=0.1.0  # Core LangChain for callbacks/tracing
+langchain-openai>=0.1.0  # OpenAI integration with tracing
 
 pytest
 pytest-asyncio
