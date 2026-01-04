@@ -15,6 +15,9 @@ ujson
 ollama  # Ollama Python client for local LLM inference
 fix-busted-json  # Fix malformed JSON from LLM responses
 
+# Cryptography for CIRIS Ed25519 signatures (FR-5)
+cryptography>=41.0.0  # Ed25519 signing for CIRIS trace compliance
+
 # LangSmith/LangChain tracing (optional but recommended)
 langsmith>=0.1.0  # LangSmith SDK for tracing
 langchain-core>=0.1.0  # Core LangChain for callbacks/tracing

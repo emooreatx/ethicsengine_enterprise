@@ -52,7 +52,19 @@ from core.he300_validator import HE300Validator, sample_scenarios_deterministic
 from api.routers.he300_spec import get_cached_spec
 from config.settings import settings
 
+# CIRIS trace validation imports (optional)
+try:
+    from core.ciris_validator import validate_he300_batch_ciris, CIRISValidationResult
+    from utils.ed25519_signing import sign_trace, is_signing_available, get_signing_status
+    HAS_CIRIS_VALIDATOR = True
+except ImportError:
+    HAS_CIRIS_VALIDATOR = False
+    # Logger defined below - will log at module init if verbose logging needed
+
 logger = logging.getLogger(__name__)
+
+if not HAS_CIRIS_VALIDATOR:
+    logger.info("CIRIS validator not available - CIRIS compliance features disabled")
 
 router = APIRouter(
     prefix="/he300",
@@ -999,3 +1011,165 @@ async def preview_sampling(
         "by_category": {k: len(v) for k, v in by_category.items()},
         "scenario_ids": scenario_ids,
     }
+
+
+# --- CIRIS Trace Validation Endpoints ---
+
+@router.post("/ciris/validate/{batch_id}")
+async def validate_batch_ciris(batch_id: str):
+    """
+    Validate a batch result against the CIRIS trace specification.
+    
+    Per FSD:
+    - FR-4: Validates against CIRIS structure (Observation, Context, etc.)
+    - FR-5: Verifies Ed25519 signatures
+    - FR-10: Returns structured failure rationale
+    - FR-11: Structured JSON output with trace_id and status
+    
+    Returns CIRIS validation result with compliance status.
+    """
+    import json
+    
+    if not HAS_CIRIS_VALIDATOR:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="CIRIS validator not available. Install required dependencies."
+        )
+    
+    # Get the batch data
+    batch_data = None
+    
+    # Check in-memory storage
+    for trace_id, data in _trace_storage.items():
+        if data.get("batch_id") == batch_id:
+            batch_data = data
+            break
+    
+    # Check disk storage
+    if not batch_data:
+        result_file = BENCHMARK_RESULTS_DIR / f"{batch_id}.json"
+        if result_file.exists():
+            try:
+                batch_data = json.loads(result_file.read_text())
+            except Exception as e:
+                logger.error(f"Failed to load result file {result_file}: {e}")
+    
+    if not batch_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Batch '{batch_id}' not found"
+        )
+    
+    # Run CIRIS validation
+    try:
+        result = await validate_he300_batch_ciris(batch_data)
+        return result.model_dump()
+    except Exception as e:
+        logger.error(f"CIRIS validation failed for batch {batch_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"CIRIS validation failed: {e}"
+        )
+
+
+@router.post("/ciris/sign/{batch_id}")
+async def sign_batch_ciris(batch_id: str):
+    """
+    Sign a batch result with Ed25519 for CIRIS compliance.
+    
+    Per FSD FR-5: Provides Ed25519 cryptographic signing.
+    Per FSD FR-9: Generates hash chain audit metadata.
+    
+    Returns the signature and updated audit metadata.
+    """
+    import json
+    
+    if not HAS_CIRIS_VALIDATOR:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="CIRIS signing not available. Install required dependencies."
+        )
+    
+    if not is_signing_available():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ed25519 signing not available. Install cryptography library."
+        )
+    
+    # Get the batch data
+    batch_data = None
+    result_file = None
+    
+    # Check disk storage (primary)
+    disk_file = BENCHMARK_RESULTS_DIR / f"{batch_id}.json"
+    if disk_file.exists():
+        try:
+            batch_data = json.loads(disk_file.read_text())
+            result_file = disk_file
+        except Exception as e:
+            logger.error(f"Failed to load result file {disk_file}: {e}")
+    
+    # Check in-memory storage
+    if not batch_data:
+        for trace_id, data in _trace_storage.items():
+            if data.get("batch_id") == batch_id:
+                batch_data = data
+                break
+    
+    if not batch_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Batch '{batch_id}' not found"
+        )
+    
+    # Sign the trace
+    try:
+        signed_data = sign_trace(batch_data)
+        
+        # Persist the signed data back to disk
+        if result_file:
+            result_file.write_text(json.dumps(signed_data, indent=2, default=str))
+            logger.info(f"Persisted signed batch result to {result_file}")
+        
+        # Update in-memory storage
+        for trace_id, data in _trace_storage.items():
+            if data.get("batch_id") == batch_id:
+                _trace_storage[trace_id] = signed_data
+                break
+        
+        return {
+            "status": "signed",
+            "batch_id": batch_id,
+            "audit": signed_data.get("audit", {}),
+            "signing_status": get_signing_status(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to sign batch {batch_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Signing failed: {e}"
+        )
+
+
+@router.get("/ciris/status")
+async def ciris_status():
+    """
+    Get CIRIS validation and signing status.
+    
+    Returns availability of CIRIS validation features and signing capability.
+    """
+    status_info = {
+        "ciris_validator_available": HAS_CIRIS_VALIDATOR,
+        "ed25519_signing": {},
+    }
+    
+    if HAS_CIRIS_VALIDATOR:
+        try:
+            status_info["ed25519_signing"] = get_signing_status()
+        except Exception as e:
+            status_info["ed25519_signing"] = {
+                "available": False,
+                "error": str(e),
+            }
+    
+    return status_info
