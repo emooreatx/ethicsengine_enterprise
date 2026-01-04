@@ -12,3 +12,4 @@ logs/ethics_engine.log
 *.pyc
 data/pipelines/ethics/
 
+data/keys/
