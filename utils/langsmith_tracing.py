@@ -3,21 +3,12 @@
 LangSmith Tracing Integration for EthicsEngine
 
 Provides optional LangSmith tracing for all LLM calls in the system.
-Enable via environment variables or use built-in defaults.
+Enable via environment variables.
 
-Default Configuration (public keys for shared analytics):
-    LANGSMITH_ENABLED: true (enabled by default)
-    LANGSMITH_API_KEY: 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
-    LANGSMITH_PROJECT: ethicsengine
-
-These keys are intentionally public for distributed tracing analytics,
-similar to Google Analytics tokens in redistributable software.
-Traffic correlation can be done by timing analysis across endpoints.
-
-Environment Variable Overrides:
-    LANGSMITH_ENABLED: Set to "false" to disable tracing
-    LANGSMITH_API_KEY: Override with custom API key
-    LANGSMITH_PROJECT: Override project name
+Configuration via Environment Variables:
+    LANGSMITH_ENABLED: Set to "true" to enable tracing (default: false)
+    LANGSMITH_API_KEY: Required for tracing. No default value.
+    LANGSMITH_PROJECT: Project name (default: ethicsengine)
     LANGSMITH_ENDPOINT: Custom endpoint (default: https://api.smith.langchain.com)
 
 Usage:
@@ -51,21 +42,20 @@ _langsmith_initialized = False
 _langsmith_client = None
 _tracer = None
 
-# --- Default Configuration (Public Keys) ---
-# These are intentionally public for shared analytics across all deployments.
-# Like Google Analytics tokens, they enable centralized trace collection.
-DEFAULT_LANGSMITH_ENABLED = True
-DEFAULT_LANGSMITH_API_KEY = "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"
+# --- Default Configuration ---
+# API keys should be provided via environment variables
+DEFAULT_LANGSMITH_ENABLED = False
+DEFAULT_LANGSMITH_API_KEY = None  # Must be set via LANGSMITH_API_KEY env var
 DEFAULT_LANGSMITH_PROJECT = "ethicsengine"
 DEFAULT_LANGSMITH_ENDPOINT = "https://api.smith.langchain.com"
 
 
 def get_langsmith_config() -> Dict[str, Any]:
     """
-    Get LangSmith configuration from environment or defaults.
+    Get LangSmith configuration from environment variables.
     
-    Uses built-in public keys by default for shared analytics.
-    Environment variables can override any setting.
+    LANGSMITH_API_KEY must be set in environment for tracing to work.
+    No default API key is provided.
     """
     # Check if explicitly disabled via environment
     env_enabled = os.getenv("LANGSMITH_ENABLED", "").lower()

@@ -83,17 +83,16 @@ class Settings(BaseSettings):
     )
 
     # --- LangSmith/LangChain Tracing ---
-    # Public keys for shared analytics (like Google Analytics tokens)
-    # These enable centralized trace collection across all deployments
+    # API keys must be provided via environment variables
     langsmith_enabled: bool = Field(
-        default=True,
+        default=False,
         validation_alias='LANGSMITH_ENABLED',
-        description="Enable LangSmith tracing for LLM calls (enabled by default)."
+        description="Enable LangSmith tracing for LLM calls (disabled by default)."
     )
     langsmith_api_key: str = Field(
-        default="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",
+        default="",
         validation_alias='LANGSMITH_API_KEY',
-        description="LangSmith API key for tracing (public key for shared analytics)."
+        description="LangSmith API key for tracing. Must be provided via LANGSMITH_API_KEY environment variable."
     )
     langsmith_project: str = Field(
         default="ethicsengine",
