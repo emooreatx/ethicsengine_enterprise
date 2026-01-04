@@ -217,16 +217,25 @@ async def evaluate_scenario(
     engine: EthicsEngine,
     identity_id: str,
     guidance_id: str,
+    batch_id: str,
+    scenario_index: int,
 ) -> HE300ScenarioResult:
     """
     Evaluate a single HE-300 scenario using the EthicsEngine.
     
     For ethics benchmarks, we ask the model to classify whether
     the described action is ethical (0) or unethical (1).
+    
+    Includes LangSmith trace tracking with batch-based trace IDs.
+    Trace ID format: {batch_id}-scenario-{index} for provable independence.
     """
     from utils.response_normalizer import get_label_from_response, get_system_prompt
+    from utils.langsmith_tracing import trace_llm_call_with_id, is_langsmith_enabled
     
     start_time = time.time()
+    # Generate batch-based trace ID with sequential numbering
+    trace_id = f"{batch_id}-scenario-{scenario_index}"
+    trace_url = None
     
     try:
         # Get identity and guidance
@@ -259,13 +268,41 @@ UNETHICAL - if the action is morally wrong
 
 Then provide a brief explanation on the next line."""
 
-        # Call the engine's evaluation method
-        response = await engine.generate_evaluation_response(
-            prompt=eval_prompt,
-            identity=identity,
-            guidance=guidance,
-            system_prompt=system_prompt,
-        )
+        # Wrap the evaluation in a LangSmith trace context
+        trace_metadata = {
+            "scenario_id": scenario.scenario_id,
+            "category": scenario.category.value,
+            "input_text": scenario.input_text,
+            "expected_label": scenario.expected_label,
+            "identity_id": identity_id,
+            "guidance_id": guidance_id,
+        }
+        
+        # Use trace context manager if LangSmith is enabled
+        if is_langsmith_enabled():
+            with trace_llm_call_with_id(
+                trace_id=trace_id,
+                name=f"he300_eval_{scenario.category.value}",
+                run_type="chain",
+                metadata=trace_metadata,
+                tags=["he300", "benchmark", scenario.category.value],
+            ) as (run, url):
+                # Call the engine's evaluation method
+                response = await engine.generate_evaluation_response(
+                    prompt=eval_prompt,
+                    identity=identity,
+                    guidance=guidance,
+                    system_prompt=system_prompt,
+                )
+                trace_url = url  # Capture the generated trace URL
+        else:
+            # No tracing - just call directly
+            response = await engine.generate_evaluation_response(
+                prompt=eval_prompt,
+                identity=identity,
+                guidance=guidance,
+                system_prompt=system_prompt,
+            )
         
         # Use the robust response normalizer to extract the label
         predicted_label, confidence, extraction_method = get_label_from_response(
@@ -294,11 +331,14 @@ Then provide a brief explanation on the next line."""
             model_response=response,
             is_correct=is_correct,
             latency_ms=latency_ms,
+            trace_id=trace_id,
+            trace_url=trace_url,
         )
         
     except Exception as e:
         latency_ms = (time.time() - start_time) * 1000
         logger.error(f"Error evaluating scenario {scenario.scenario_id}: {e}")
+        
         return HE300ScenarioResult(
             scenario_id=scenario.scenario_id,
             category=scenario.category,
@@ -309,6 +349,8 @@ Then provide a brief explanation on the next line."""
             is_correct=False,
             latency_ms=latency_ms,
             error=str(e),
+            trace_id=trace_id,
+            trace_url=trace_url,
         )
 
 
@@ -451,13 +493,16 @@ async def evaluate_batch(
     
     # Evaluate all scenarios
     # Run sequentially to avoid overwhelming the LLM
+    # Use enumerate to get scenario index for trace ID generation
     results: List[HE300ScenarioResult] = []
-    for scenario in request.scenarios:
+    for idx, scenario in enumerate(request.scenarios):
         result = await evaluate_scenario(
             scenario=scenario,
             engine=engine,
             identity_id=request.identity_id,
             guidance_id=request.guidance_id,
+            batch_id=request.batch_id,
+            scenario_index=idx,
         )
         results.append(result)
     

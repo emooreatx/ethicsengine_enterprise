@@ -88,6 +88,10 @@ class HE300ScenarioResult(BaseModel):
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Model confidence if available")
     latency_ms: float = Field(..., ge=0, description="Processing time in milliseconds")
     error: Optional[str] = Field(None, description="Error message if scenario failed")
+    trace_id: Optional[str] = Field(None, description="LangSmith trace ID for this scenario evaluation")
+    trace_url: Optional[str] = Field(None, description="LangSmith trace URL for viewing in UI")
+    trace_id: Optional[str] = Field(None, description="LangSmith trace ID for this evaluation")
+    trace_url: Optional[str] = Field(None, description="URL to view trace in LangSmith")
     
     class Config:
         json_schema_extra = {

@@ -387,6 +387,15 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
         input_text_escaped = s.input_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
         response_escaped = s.model_response.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;') if s.model_response else ''
         
+        # Build trace link HTML if available
+        trace_link_html = ''
+        if s.trace_id and s.trace_url:
+            trace_link_html = f'<a href="{s.trace_url}" target="_blank" rel="noopener noreferrer" title="View LangSmith trace: {s.trace_id}">&#128279;</a>'
+        elif s.trace_id:
+            trace_link_html = f'<span title="Trace ID: {s.trace_id}">&#128279;</span>'
+        else:
+            trace_link_html = '<span style="color: #ccc;">-</span>'
+        
         scenarios_rows.append(f'''
         <tr class="scenario-row {status_class}" data-category="{s.category}">
             <td><code>{s.scenario_id}</code></td>
@@ -396,6 +405,7 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
             <td><span class="label-badge predicted {status_class}">{predicted}</span></td>
             <td><span class="status-icon">{("&#10003;" if s.is_correct else "&#10007;")}</span></td>
             <td>{s.latency_ms:.0f}ms</td>
+            <td style="text-align: center;">{trace_link_html}</td>
             <td>
                 <button class="btn-small" onclick="showDetails('{s.scenario_id}')">View</button>
             </td>
@@ -768,6 +778,7 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
                             <th>Model Prediction</th>
                             <th>Result</th>
                             <th>Latency</th>
+                            <th>Trace</th>
                             <th>Details</th>
                         </tr>
                     </thead>
@@ -854,6 +865,7 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
                     <span class="detail-label">Latency</span>
                     <span class="detail-value">${{s.latency_ms.toFixed(0)}}ms</span>
                 </div>
+                ${{s.trace_id ? `<div class="detail-row"><span class="detail-label">Trace ID</span><span class="detail-value"><code>${{s.trace_id}}</code>${{s.trace_url ? ` <a href="${{s.trace_url}}" target="_blank" rel="noopener noreferrer" style="color: var(--primary);">&#128279; View in LangSmith</a>` : ''}}</span></div>` : ''}}
                 ${{s.error ? `<div class="detail-row"><span class="detail-label">Error</span><span class="detail-value" style="color: var(--danger)">${{s.error}}</span></div>` : ''}}
                 <div style="margin-top: 1rem;">
                     <strong>Model Response:</strong>

@@ -141,7 +141,7 @@ def trace_llm_call(
             response = await engine.generate_response(prompt)
     """
     if not _langsmith_initialized or not _langsmith_client:
-        yield
+        yield None
         return
     
     start_time = datetime.now(timezone.utc)
@@ -166,10 +166,86 @@ def trace_llm_call(
         
     except ImportError:
         # LangSmith not installed, just yield
-        yield
+        yield None
     except Exception as e:
         logger.debug(f"LangSmith tracing error: {e}")
-        yield
+        yield None
+
+
+@contextmanager
+def trace_llm_call_with_id(
+    trace_id: str,
+    name: str,
+    run_type: str = "llm",
+    metadata: Optional[Dict[str, Any]] = None,
+    tags: Optional[list] = None,
+):
+    """
+    Context manager for tracing an LLM call with a custom trace ID.
+    Returns both the run object and the generated trace URL.
+    
+    Args:
+        trace_id: Explicit trace ID to use (e.g., batch-001-scenario-0)
+        name: Name of the operation
+        run_type: Type of run (llm, chain, tool, etc.)
+        metadata: Additional metadata to include
+        tags: Tags for the trace
+    
+    Returns:
+        Tuple of (RunTree object, trace_url string) or (None, None) if tracing disabled
+    
+    Example:
+        with trace_llm_call_with_id("batch-001-scenario-0", "ethics_eval") as (run, trace_url):
+            response = await engine.generate_response(prompt)
+    """
+    if not _langsmith_initialized or not _langsmith_client:
+        yield (None, None)
+        return
+    
+    run_id = None
+    trace_url = None
+    
+    try:
+        from langsmith.run_trees import RunTree
+        
+        # Add trace_id to metadata for correlation
+        full_metadata = metadata or {}
+        full_metadata["trace_id"] = trace_id
+        full_metadata["indexed_id"] = trace_id  # For easy searching in LangSmith
+        
+        run = RunTree(
+            name=f"{name}_{trace_id}",  # Include trace_id in run name for easy identification
+            run_type=run_type,
+            inputs=full_metadata,
+            project_name=os.getenv("LANGCHAIN_PROJECT", "ethicsengine"),
+            tags=(tags or []) + [trace_id.split("-")[0]],  # Add batch ID as tag
+        )
+        run_id = str(run.id)
+        trace_url = generate_trace_url(trace_id, run_id)
+        
+        yield (run, trace_url)
+        
+        run.end(outputs={"status": "success", "trace_url": trace_url})
+        run.post()
+        
+    except ImportError:
+        yield (None, None)
+    except Exception as e:
+        logger.debug(f"LangSmith tracing error: {e}")
+        yield (None, None)
+        
+    except ImportError:
+        logger.debug("LangSmith not installed, trace_id will not be tracked")
+        class DummyRun:
+            trace_url = None
+            id = trace_id
+        yield DummyRun()
+    except Exception as e:
+        logger.warning(f"LangSmith tracing error for trace_id {trace_id}: {e}")
+        class DummyRun:
+            trace_url = None
+            id = trace_id
+        yield DummyRun()
 
 
 @contextmanager  
@@ -337,6 +413,49 @@ def create_traced_openai_client():
         except ImportError:
             logger.warning("Neither langchain-openai nor openai package available")
             return None
+
+
+def get_trace_url(trace_id: str, project_name: Optional[str] = None) -> Optional[str]:
+    """
+    Get the LangSmith trace URL for a given trace ID.
+    
+    Args:
+        trace_id: The trace/run ID
+        project_name: Optional project name (defaults to env var or 'ethicsengine')
+    
+    Returns:
+        Full URL to view the trace in LangSmith UI, or None if not configured
+    """
+    if not _langsmith_initialized:
+        return None
+    
+    if not project_name:
+        project_name = os.getenv("LANGCHAIN_PROJECT", "ethicsengine")
+    
+    endpoint = os.getenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    if "api.smith" in endpoint:
+        base_url = "https://smith.langchain.com"
+    else:
+        base_url = endpoint.replace("/api", "")
+    
+    return f"{base_url}/o/default/projects/p/{project_name}/r/{trace_id}"
+
+
+def generate_trace_url(trace_id: str, run_id: Optional[str] = None) -> Optional[str]:
+    """Generate a LangSmith trace URL for a given trace/run ID."""
+    if not _langsmith_initialized:
+        return None
+    
+    config = get_langsmith_config()
+    project = config.get("project", "ethicsengine")
+    
+    # LangSmith URL format: https://smith.langchain.com/o/{org}/projects/p/{project}/r/{run_id}
+    # For now, use a direct trace link format
+    if run_id:
+        return f"https://smith.langchain.com/public/{run_id}/r"
+    
+    # Fallback: project-level view with filter
+    return f"https://smith.langchain.com/projects/p/{project}"
 
 
 def get_langsmith_status() -> Dict[str, Any]:
