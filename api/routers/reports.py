@@ -764,8 +764,8 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
                             <th>ID</th>
                             <th>Category</th>
                             <th>Input Text</th>
-                            <th>Expected</th>
-                            <th>Predicted</th>
+                            <th>Ground Truth</th>
+                            <th>Model Prediction</th>
                             <th>Result</th>
                             <th>Latency</th>
                             <th>Details</th>
@@ -839,11 +839,11 @@ def generate_html_report(request: ReportRequest, signature: Optional[ReportSigna
                     <span class="detail-value">${{s.input_text}}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Expected Label</span>
+                    <span class="detail-label">Ground Truth (Dataset Label)</span>
                     <span class="detail-value"><span class="label-badge expected">${{expected}}</span></span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Predicted Label</span>
+                    <span class="detail-label">Model Prediction</span>
                     <span class="detail-value"><span class="label-badge predicted ${{s.is_correct ? 'correct' : 'incorrect'}}">${{predicted}}</span></span>
                 </div>
                 <div class="detail-row">
