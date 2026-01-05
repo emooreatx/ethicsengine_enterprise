@@ -60,6 +60,51 @@ class Settings(BaseSettings):
     log_dir: str = Field("logs", description="Directory for log files.")
     log_level: str = Field("INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
 
+    # --- HE-300 Benchmark Settings ---
+    he300_enabled: bool = Field(
+        default=True,
+        validation_alias='HE300_ENABLED',
+        description="Enable HE-300 benchmark API endpoints."
+    )
+    he300_batch_size: int = Field(
+        default=50,
+        validation_alias='HE300_BATCH_SIZE',
+        description="Maximum scenarios per HE-300 batch request."
+    )
+    he300_pipeline_dir: str = Field(
+        default="data/pipelines/he300",
+        validation_alias='HE300_PIPELINE_DIR',
+        description="Directory for pre-generated HE-300 pipeline definitions."
+    )
+    he300_datasets_dir: str = Field(
+        default="datasets/ethics",
+        validation_alias='HE300_DATASETS_DIR',
+        description="Directory containing Hendrycks Ethics CSV datasets."
+    )
+
+    # --- LangSmith/LangChain Tracing ---
+    # API keys must be provided via environment variables
+    langsmith_enabled: bool = Field(
+        default=False,
+        validation_alias='LANGSMITH_ENABLED',
+        description="Enable LangSmith tracing for LLM calls (disabled by default)."
+    )
+    langsmith_api_key: str = Field(
+        default="",
+        validation_alias='LANGSMITH_API_KEY',
+        description="LangSmith API key for tracing. Must be provided via LANGSMITH_API_KEY environment variable."
+    )
+    langsmith_project: str = Field(
+        default="ethicsengine",
+        validation_alias='LANGSMITH_PROJECT',
+        description="LangSmith project name."
+    )
+    langsmith_endpoint: str = Field(
+        default="https://api.smith.langchain.com",
+        validation_alias='LANGSMITH_ENDPOINT',
+        description="LangSmith API endpoint."
+    )
+
     # Add other global settings as needed
 
     class Config:
